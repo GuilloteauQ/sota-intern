@@ -25,3 +25,8 @@ sota-intern "self-scheduling" "openmp" ...
 - [ ] extract references names
 - [ ] recursive calls of papers
 - [ ] create ranking
+
+
+## APIs
+
+- IEEE: https://developer.ieee.org/docs/read/Home

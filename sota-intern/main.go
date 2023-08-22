@@ -18,7 +18,7 @@ import (
 )
 
 var (
-	titleStyle        = lipgloss.NewStyle().MarginLeft(2)
+	titleStyle        = lipgloss.NewStyle().MarginLeft(2).MarginRight(2)
 	itemStyle         = lipgloss.NewStyle().PaddingLeft(4)
 	selectedItemStyle = lipgloss.NewStyle().PaddingLeft(2).Foreground(lipgloss.Color("170"))
 	paginationStyle   = list.DefaultStyles().PaginationStyle.PaddingLeft(4)
@@ -168,7 +168,7 @@ type model struct {
 }
 
 func initialModel() model {
-	ti := textinput.New()
+    ti := textinput.New()
 	ti.Placeholder = "openmp"
 	ti.Focus()
 	ti.CharLimit = 156
@@ -191,36 +191,43 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 
 			titles := make([]list.Item, len(m.response.Response.Documents))
 			for i, doc := range m.response.Response.Documents {
-				titles[i] = item(doc.Title[0])
+                width := m.list.Width() - 15
+                wrapped := lipgloss.NewStyle().Width(width).Render(doc.Title[0])
+				titles[i] = item(wrapped)
+				// titles[i] = item(doc.Title[0])
 			}
-
-			m.list = list.New(titles, itemDelegate{}, 20, 20)
-			m.list.Title = "What do you want for dinner?"
-			m.list.SetShowStatusBar(false)
-			m.list.SetFilteringEnabled(false)
-			m.list.Styles.Title = titleStyle
-			m.list.Styles.PaginationStyle = paginationStyle
-			m.list.Styles.HelpStyle = helpStyle
+            m.list.SetItems(titles)
 
 			return m, nil
 		case 1:
 			panic("oops")
 		}
 	case tea.WindowSizeMsg:
-		headerHeight := lipgloss.Height(m.headerView()) / 2
-		// footerHeight := lipgloss.Height(m.footerView()) / 2
-		// verticalMarginHeight := headerHeight + footerHeight
+		headerHeight := lipgloss.Height(m.headerView())
+		footerHeight := lipgloss.Height(m.footerView())
+		verticalMarginHeight := headerHeight + footerHeight
 
 		if !m.ready {
-			m.viewport = viewport.New(msg.Width, 15) //msg.Height-verticalMarginHeight)
-			m.viewport.YPosition = headerHeight / 2
+			m.ready = true
+
+			m.viewport = viewport.New(msg.Width / 2, msg.Height-verticalMarginHeight)
 			m.viewport.HighPerformanceRendering = false //useHighPerformanceRenderer
 			m.viewport.SetContent(m.content)
-			m.ready = true
-			m.viewport.YPosition = headerHeight/2 + 1
+			m.viewport.YPosition = headerHeight
+
+			m.list = list.New(nil, itemDelegate{}, msg.Width / 2, msg.Height-verticalMarginHeight)// msg.Height)
+			m.list.Title = "What do you want for dinner?"
+			m.list.SetShowStatusBar(false)
+			m.list.SetFilteringEnabled(false)
+			m.list.Styles.Title = titleStyle
+			m.list.Styles.PaginationStyle = paginationStyle
+			m.list.Styles.HelpStyle = helpStyle
 		} else {
-			m.viewport.Width = msg.Width
-			m.viewport.Height = 15 //msg.Height / 2 - verticalMarginHeight
+			m.viewport.Width = msg.Width / 2
+			m.viewport.Height = msg.Height - verticalMarginHeight
+            m.list.SetWidth(msg.Width / 2)
+            m.list.SetHeight(msg.Height - verticalMarginHeight)
+
 		}
 	case tea.KeyMsg:
 		switch msg.Type {
@@ -233,7 +240,9 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			if m.queryDone {
 				var halUrl string
 				for _, doc := range m.response.Response.Documents {
-					if doc.Title[0] == m.choice {
+                    width := m.list.Width() - 15
+                    wrapped := lipgloss.NewStyle().Width(width).Render(doc.Title[0])
+					if wrapped == m.choice {
 						halUrl = fmt.Sprintf("https://hal.science/%s/document", doc.HalId)
 						break
 					}
@@ -257,7 +266,9 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			if ok {
 				m.choice = string(i)
 				for _, doc := range m.response.Response.Documents {
-					if doc.Title[0] == m.choice {
+                    width := m.list.Width() - 15
+                    wrapped := lipgloss.NewStyle().Width(width).Render(doc.Title[0])
+					if wrapped == m.choice {
 						width := m.viewport.Width - 10
 						wrapped := lipgloss.NewStyle().Width(width).Render(doc.Abstract[0])
 						m.viewport.SetContent(wrapped)
@@ -273,7 +284,8 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 
 func (m model) View() string {
 	if m.queryDone {
-		return lipgloss.JoinVertical(lipgloss.Top, m.list.View(), fmt.Sprintf("%s\n%s\n%s", m.headerView(), m.viewport.View(), m.footerView()))
+		// return lipgloss.JoinVertical(lipgloss.Top, m.list.View(), fmt.Sprintf("%s\n%s\n%s", m.headerView(), m.viewport.View(), m.footerView()))
+		return lipgloss.JoinHorizontal(lipgloss.Left, m.list.View(), fmt.Sprintf("%s\n%s\n%s", m.headerView(), m.viewport.View(), m.footerView()))
 	} else {
 		return fmt.Sprintf(
 			"Enter Keyword\n\n%s\n\n%s",
