@@ -3,7 +3,7 @@ package main
 import (
 	"encoding/json"
 	"fmt"
-	"io"
+	//"io"
 	"io/ioutil"
 	"net/http"
 	"os"
@@ -70,32 +70,31 @@ func (m model) footerView() string {
 	return lipgloss.JoinHorizontal(lipgloss.Center, line, info)
 }
 
-type item string
 
-func (i item) FilterValue() string { return "" }
+// func (i item) FilterValue() string { return "" }
 
-type itemDelegate struct{}
-
-func (d itemDelegate) Height() int                             { return 1 }
-func (d itemDelegate) Spacing() int                            { return 0 }
-func (d itemDelegate) Update(_ tea.Msg, _ *list.Model) tea.Cmd { return nil }
-func (d itemDelegate) Render(w io.Writer, m list.Model, index int, listItem list.Item) {
-	i, ok := listItem.(item)
-	if !ok {
-		return
-	}
-
-	str := fmt.Sprintf("%d. %s", index+1, i)
-
-	fn := itemStyle.Render
-	if index == m.Index() {
-		fn = func(s ...string) string {
-			return selectedItemStyle.Render("> " + strings.Join(s, " "))
-		}
-	}
-
-	fmt.Fprint(w, fn(str))
-}
+// type itemDelegate struct{}
+// 
+// func (d itemDelegate) Height() int                             { return 1 }
+// func (d itemDelegate) Spacing() int                            { return 0 }
+// func (d itemDelegate) Update(_ tea.Msg, _ *list.Model) tea.Cmd { return nil }
+// func (d itemDelegate) Render(w io.Writer, m list.Model, index int, listItem list.Item) {
+// 	i, ok := listItem.(item)
+// 	if !ok {
+// 		return
+// 	}
+// 
+// 	str := fmt.Sprintf("%d. %s", index+1, i)
+// 
+// 	fn := itemStyle.Render
+// 	if index == m.Index() {
+// 		fn = func(s ...string) string {
+// 			return selectedItemStyle.Render("> " + strings.Join(s, " "))
+// 		}
+// 	}
+// 
+// 	fmt.Fprint(w, fn(str))
+// }
 
 type statusMsg int
 
@@ -112,12 +111,34 @@ type Response struct {
 }
 
 type Document struct {
-	Title    []string `json:"title_s"`
-	Abstract []string `json:"abstract_s"`
-	HalId    string   `json:"halId_s"`
-	Domains  []string `json:"domain_s"`
-	SubDate  string   `json:"submittedDate_tdate"`
+	PaperTitle    []string `json:"title_s"`
+	Abstract      []string `json:"abstract_s"`
+    Authors       []string   `json:"authFullName_s"`
+	HalId         string   `json:"halId_s"`
+	Domains       []string `json:"domain_s"`
+	SubDate       string   `json:"submittedDate_tdate"`
 }
+
+func (d Document) Title() string {
+    width := 90
+    wrapped := lipgloss.NewStyle().Width(width).Render(d.PaperTitle[0])
+    return wrapped
+}
+
+func (d Document) FilterValue() string {
+    width := 90
+    wrapped := lipgloss.NewStyle().Width(width).Render(d.PaperTitle[0])
+    return wrapped
+}
+
+func (d Document) Description() string {
+    width := 90
+    wrapped := lipgloss.NewStyle().Width(width).Render(strings.Join(d.Authors, ", "))
+    return wrapped
+}
+
+// type item Document
+// type item string
 
 func send_get_req(keywords []string, response *HalResponse) tea.Msg {
 	domain := "1.info.info-dc"
@@ -126,7 +147,7 @@ func send_get_req(keywords []string, response *HalResponse) tea.Msg {
 		fields = append(fields, fmt.Sprintf("\"%s\"~", kw))
 	}
 	title_request := strings.Join(fields, "||")
-	url := fmt.Sprintf("https://api.archives-ouvertes.fr/search/?q=abstract_t:(%s)&fq=title_t:(%s)&fq=openAccess_bool:true&wt=json&fq=domain_s:%s&fl=title_s,submittedDate_tdate,abstract_s,halId_s,domain_s&rows=100000", title_request, title_request, domain)
+	url := fmt.Sprintf("https://api.archives-ouvertes.fr/search/?q=abstract_t:(%s)&fq=title_t:(%s)&fq=openAccess_bool:true&wt=json&fq=domain_s:%s&fl=title_s,submittedDate_tdate,abstract_s,halId_s,domain_s,authFullName_s&rows=100000", title_request, title_request, domain)
 	resp, err := http.Get(url)
 	if err != nil {
 		fmt.Println("get")
@@ -189,15 +210,15 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		case 0:
 			m.queryDone = true
 
-			titles := make([]list.Item, len(m.response.Response.Documents))
-			for i, doc := range m.response.Response.Documents {
-                width := m.list.Width() - 15
-                wrapped := lipgloss.NewStyle().Width(width).Render(doc.Title[0])
-				titles[i] = item(wrapped)
-				// titles[i] = item(doc.Title[0])
-			}
-            m.list.SetItems(titles)
-
+            //  m.list.SetItems([]list.Item m.response.Response.Documents)
+			 titles := make([]list.Item, len(m.response.Response.Documents))
+			 for i, doc := range m.response.Response.Documents {
+               //   width := m.list.Width() - 15
+               //   wrapped := lipgloss.NewStyle().Width(width).Render(doc.PaperTitle[0])
+			   //  titles[i] = item(wrapped)
+			 	titles[i] = list.Item(doc)
+			 }
+             m.list.SetItems(titles)
 			return m, nil
 		case 1:
 			panic("oops")
@@ -215,7 +236,7 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			m.viewport.SetContent(m.content)
 			m.viewport.YPosition = headerHeight
 
-			m.list = list.New(nil, itemDelegate{}, msg.Width / 2, msg.Height-verticalMarginHeight)// msg.Height)
+			m.list = list.New([]list.Item{}, list.NewDefaultDelegate(), msg.Width / 2, msg.Height-verticalMarginHeight)// msg.Height)
 			m.list.Title = "What do you want for dinner?"
 			m.list.SetShowStatusBar(false)
 			m.list.SetFilteringEnabled(false)
@@ -239,16 +260,12 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		case tea.KeyEnter:
 			if m.queryDone {
 				var halUrl string
-				for _, doc := range m.response.Response.Documents {
-                    width := m.list.Width() - 15
-                    wrapped := lipgloss.NewStyle().Width(width).Render(doc.Title[0])
-					if wrapped == m.choice {
-						halUrl = fmt.Sprintf("https://hal.science/%s/document", doc.HalId)
-						break
-					}
-				}
-				cmdBrowser := exec.Command("xdg-open", halUrl)
-				cmdBrowser.Run()
+                i, ok := m.list.SelectedItem().(Document)
+                if ok {
+					halUrl = fmt.Sprintf("https://hal.science/%s/document", i.HalId)
+                    cmdBrowser := exec.Command("xdg-open", halUrl)
+                    cmdBrowser.Run()
+			    }
 				return m, nil
 			} else {
 				m.keyword = m.textInput.Value()
@@ -262,18 +279,11 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			m.viewport, cmd = m.viewport.Update(msg)
 		} else {
 			m.list, cmd = m.list.Update(msg)
-			i, ok := m.list.SelectedItem().(item)
+			i, ok := m.list.SelectedItem().(Document)
 			if ok {
-				m.choice = string(i)
-				for _, doc := range m.response.Response.Documents {
-                    width := m.list.Width() - 15
-                    wrapped := lipgloss.NewStyle().Width(width).Render(doc.Title[0])
-					if wrapped == m.choice {
-						width := m.viewport.Width - 10
-						wrapped := lipgloss.NewStyle().Width(width).Render(doc.Abstract[0])
-						m.viewport.SetContent(wrapped)
-					}
-				}
+                width := m.viewport.Width - 10
+                wrapped := lipgloss.NewStyle().Width(width).Render(i.Abstract[0])
+                m.viewport.SetContent(wrapped)
 			}
 		}
 	} else {
