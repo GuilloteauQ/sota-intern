@@ -2,6 +2,7 @@ package main
 
 import (
 	"encoding/json"
+	"encoding/xml"
 	"fmt"
 	//"io"
 	"io/ioutil"
@@ -70,11 +71,10 @@ func (m model) footerView() string {
 	return lipgloss.JoinHorizontal(lipgloss.Center, line, info)
 }
 
-
 // func (i item) FilterValue() string { return "" }
 
 // type itemDelegate struct{}
-// 
+//
 // func (d itemDelegate) Height() int                             { return 1 }
 // func (d itemDelegate) Spacing() int                            { return 0 }
 // func (d itemDelegate) Update(_ tea.Msg, _ *list.Model) tea.Cmd { return nil }
@@ -83,16 +83,16 @@ func (m model) footerView() string {
 // 	if !ok {
 // 		return
 // 	}
-// 
+//
 // 	str := fmt.Sprintf("%d. %s", index+1, i)
-// 
+//
 // 	fn := itemStyle.Render
 // 	if index == m.Index() {
 // 		fn = func(s ...string) string {
 // 			return selectedItemStyle.Render("> " + strings.Join(s, " "))
 // 		}
 // 	}
-// 
+//
 // 	fmt.Fprint(w, fn(str))
 // }
 
@@ -103,44 +103,85 @@ type HalResponse struct {
 }
 
 type Response struct {
-	NumFound      int        `json:"numFound"`
-	Start         int        `json:"start"`
-	MaxScore      float32    `json:"maxScore"`
-	NumFoundExact bool       `json:"numFoundExact"`
-	Documents     []Document `json:"docs"`
+	NumFound      int           `json:"numFound"`
+	Start         int           `json:"start"`
+	MaxScore      float32       `json:"maxScore"`
+	NumFoundExact bool          `json:"numFoundExact"`
+	Documents     []HalDocument `json:"docs"`
+}
+
+type HalDocument struct {
+	PaperTitle []string `json:"title_s"`
+	Abstract   []string `json:"abstract_s"`
+	Authors    []string `json:"authFullName_s"`
+	HalId      string   `json:"halId_s"`
+	Domains    []string `json:"domain_s"`
+	SubDate    string   `json:"submittedDate_tdate"`
+}
+
+type ArxivResponse struct {
+	Entries []Entry `xml:"entry"`
+}
+
+type Entry struct {
+	PaperTitle string   `xml:"title"`
+	Abstract   string   `xml:"summary"`
+	Authors    []string `xml:"author>name"`
+	Pdf        Pdf      `xml:"link"`
+}
+
+type Pdf struct {
+	XMLName xml.Name `xml:"link"`
+	Title   string   `xml:"title,attr"`
+	URL     string   `xml:"href,attr"`
+}
+
+type Author struct {
+	Name  string `xml:"name"`
+	Affil string `xml:"arxiv:affiliation"`
 }
 
 type Document struct {
-	PaperTitle    []string `json:"title_s"`
-	Abstract      []string `json:"abstract_s"`
-    Authors       []string   `json:"authFullName_s"`
-	HalId         string   `json:"halId_s"`
-	Domains       []string `json:"domain_s"`
-	SubDate       string   `json:"submittedDate_tdate"`
+	PaperTitle string
+	Abstract   string
+	Authors    string
+	Url        string
+}
+
+func fromArxiv(doc Entry) Document {
+	width := 90
+	wrappedTitle := lipgloss.NewStyle().Width(width).Render(doc.PaperTitle)
+	wrappedAbstract := lipgloss.NewStyle().Width(width).Render(doc.Abstract)
+	wrappedAuthors := lipgloss.NewStyle().Width(width).Render(strings.Join(doc.Authors, ", "))
+	return Document{PaperTitle: wrappedTitle, Authors: wrappedAuthors, Abstract: wrappedAbstract, Url: doc.Pdf.URL}
+}
+
+func fromHal(doc HalDocument) Document {
+	width := 90
+	wrappedTitle := lipgloss.NewStyle().Width(width).Render(doc.PaperTitle[0])
+	wrappedAbstract := lipgloss.NewStyle().Width(width).Render(doc.Abstract[0])
+	wrappedAuthors := lipgloss.NewStyle().Width(width).Render(strings.Join(doc.Authors, ", "))
+	halUrl := fmt.Sprintf("https://hal.science/%s/document", doc.HalId)
+	return Document{PaperTitle: wrappedTitle, Authors: wrappedAuthors, Abstract: wrappedAbstract, Url: halUrl}
 }
 
 func (d Document) Title() string {
-    width := 90
-    wrapped := lipgloss.NewStyle().Width(width).Render(d.PaperTitle[0])
-    return wrapped
+	return d.PaperTitle
 }
 
 func (d Document) FilterValue() string {
-    width := 90
-    wrapped := lipgloss.NewStyle().Width(width).Render(d.PaperTitle[0])
-    return wrapped
+	return d.PaperTitle
 }
 
 func (d Document) Description() string {
-    width := 90
-    wrapped := lipgloss.NewStyle().Width(width).Render(strings.Join(d.Authors, ", "))
-    return wrapped
+	return d.Authors
 }
 
 // type item Document
 // type item string
 
-func send_get_req(keywords []string, response *HalResponse) tea.Msg {
+func send_get_req(keywords []string, halResponse *HalResponse, arxivResponse *ArxivResponse) tea.Msg {
+	// ---------------------------------- Hal
 	domain := "1.info.info-dc"
 	fields := make([]string, 0)
 	for _, kw := range keywords {
@@ -165,22 +206,58 @@ func send_get_req(keywords []string, response *HalResponse) tea.Msg {
 		panic(err)
 	}
 
-	err = json.Unmarshal(data, response)
+	err = json.Unmarshal(data, halResponse)
 	if err != nil {
 		fmt.Println("json")
 		panic(err)
 	}
+	// ---------------------------------- arxiv
+	// TODO
+	arxivFields := make([]string, 0)
+	for _, kw := range keywords {
+		arxivFields = append(arxivFields, fmt.Sprintf("ti:%s+OR+abs:%s", kw, kw))
+	}
+	arxiv_request := strings.Join(arxivFields, "+OR+")
+	url = fmt.Sprintf("http://export.arxiv.org/api/query?search_query=%s+AND+cat:cs.DC&max_results=200", arxiv_request)
+	resp, err = http.Get(url)
+	if err != nil {
+		fmt.Println("get")
+		panic(err)
+	}
+	defer resp.Body.Close()
+	data, err = ioutil.ReadAll(resp.Body)
+	if err != nil {
+		fmt.Println("read")
+		panic(err)
+	}
+	err = ioutil.WriteFile("output_arxiv.txt", data, 0644)
+	if err != nil {
+		panic(err)
+	}
+	//content, err := os.ReadFile("arxiv.xml")
+	//if err != nil {
+	//	fmt.Println("get")
+	//	panic(err)
+	//}
+	err = xml.Unmarshal(data, arxivResponse)
+
+	if err != nil {
+		fmt.Println("json")
+		panic(err)
+	}
+
 	return statusMsg(0)
 }
 
 type model struct {
-	keyword   string
-	textInput textinput.Model
-	queryDone bool
-	response  *HalResponse
-	list      list.Model
-	choice    string
-	quitting  bool
+	keyword       string
+	textInput     textinput.Model
+	queryDone     bool
+	halResponse   *HalResponse
+	arxivResponse *ArxivResponse
+	list          list.Model
+	choice        string
+	quitting      bool
 	// showAbstract bool
 	viewport       viewport.Model
 	content        string
@@ -189,13 +266,14 @@ type model struct {
 }
 
 func initialModel() model {
-    ti := textinput.New()
+	ti := textinput.New()
 	ti.Placeholder = "openmp"
 	ti.Focus()
 	ti.CharLimit = 156
 	ti.Width = 20
-	var response HalResponse
-	return model{textInput: ti, response: &response}
+	var halResponse HalResponse
+	var arxivResponse ArxivResponse
+	return model{textInput: ti, halResponse: &halResponse, arxivResponse: &arxivResponse}
 }
 
 func (m model) Init() tea.Cmd {
@@ -209,16 +287,17 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		switch int(msg) {
 		case 0:
 			m.queryDone = true
+			nHal := len(m.halResponse.Response.Documents)
+			nArxiv := len(m.arxivResponse.Entries)
+			titles := make([]list.Item, nHal+nArxiv)
 
-            //  m.list.SetItems([]list.Item m.response.Response.Documents)
-			 titles := make([]list.Item, len(m.response.Response.Documents))
-			 for i, doc := range m.response.Response.Documents {
-               //   width := m.list.Width() - 15
-               //   wrapped := lipgloss.NewStyle().Width(width).Render(doc.PaperTitle[0])
-			   //  titles[i] = item(wrapped)
-			 	titles[i] = list.Item(doc)
-			 }
-             m.list.SetItems(titles)
+			for i, docHal := range m.halResponse.Response.Documents {
+				titles[i] = list.Item(fromHal(docHal))
+			}
+			for i, docArxiv := range m.arxivResponse.Entries {
+				titles[nHal+i] = list.Item(fromArxiv(docArxiv))
+			}
+			m.list.SetItems(titles)
 			return m, nil
 		case 1:
 			panic("oops")
@@ -231,12 +310,12 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		if !m.ready {
 			m.ready = true
 
-			m.viewport = viewport.New(msg.Width / 2, msg.Height-verticalMarginHeight)
+			m.viewport = viewport.New(msg.Width/2, msg.Height-verticalMarginHeight)
 			m.viewport.HighPerformanceRendering = false //useHighPerformanceRenderer
 			m.viewport.SetContent(m.content)
 			m.viewport.YPosition = headerHeight
 
-			m.list = list.New([]list.Item{}, list.NewDefaultDelegate(), msg.Width / 2, msg.Height-verticalMarginHeight)// msg.Height)
+			m.list = list.New([]list.Item{}, list.NewDefaultDelegate(), msg.Width/2, msg.Height-verticalMarginHeight) // msg.Height)
 			m.list.Title = "What do you want for dinner?"
 			m.list.SetShowStatusBar(false)
 			m.list.SetFilteringEnabled(false)
@@ -246,8 +325,8 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		} else {
 			m.viewport.Width = msg.Width / 2
 			m.viewport.Height = msg.Height - verticalMarginHeight
-            m.list.SetWidth(msg.Width / 2)
-            m.list.SetHeight(msg.Height - verticalMarginHeight)
+			m.list.SetWidth(msg.Width / 2)
+			m.list.SetHeight(msg.Height - verticalMarginHeight)
 
 		}
 	case tea.KeyMsg:
@@ -259,18 +338,16 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			return m, nil
 		case tea.KeyEnter:
 			if m.queryDone {
-				var halUrl string
-                i, ok := m.list.SelectedItem().(Document)
-                if ok {
-					halUrl = fmt.Sprintf("https://hal.science/%s/document", i.HalId)
-                    cmdBrowser := exec.Command("xdg-open", halUrl)
-                    cmdBrowser.Run()
-			    }
+				i, ok := m.list.SelectedItem().(Document)
+				if ok {
+					cmdBrowser := exec.Command("xdg-open", i.Url)
+					cmdBrowser.Run()
+				}
 				return m, nil
 			} else {
 				m.keyword = m.textInput.Value()
 				keywords := []string{m.keyword}
-				return m, (func() tea.Msg { return send_get_req(keywords, m.response) })
+				return m, (func() tea.Msg { return send_get_req(keywords, m.halResponse, m.arxivResponse) })
 			}
 		}
 	}
@@ -281,9 +358,9 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			m.list, cmd = m.list.Update(msg)
 			i, ok := m.list.SelectedItem().(Document)
 			if ok {
-                width := m.viewport.Width - 10
-                wrapped := lipgloss.NewStyle().Width(width).Render(i.Abstract[0])
-                m.viewport.SetContent(wrapped)
+				width := m.viewport.Width - 10
+				wrapped := lipgloss.NewStyle().Width(width).Render(i.Abstract)
+				m.viewport.SetContent(wrapped)
 			}
 		}
 	} else {
