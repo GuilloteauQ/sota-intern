@@ -15,7 +15,7 @@
           name = "sota-intern";
           version = "0.0";
           src = ./sota-intern;
-          vendorSha256 = "sha256-7PswrA6eVste+nYpoq93o4Jnly5dW7y2J/dOYQVaAh4=";
+          vendorSha256 = "sha256-7cJ7ikshlifKq8uW6prt2pE0W+V6N07EzXlHBHAXZjY=";
         };
       };
       devShells.${system} = {

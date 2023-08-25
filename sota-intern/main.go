@@ -12,7 +12,8 @@ import (
 	"strings"
 
 	"github.com/charmbracelet/bubbles/list"
-	"github.com/charmbracelet/bubbles/textinput"
+	// "github.com/charmbracelet/bubbles/textinput"
+	"github.com/charmbracelet/bubbles/textarea"
 	"github.com/charmbracelet/bubbles/viewport"
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/charmbracelet/lipgloss"
@@ -185,10 +186,11 @@ func send_get_req(keywords []string, halResponse *HalResponse, arxivResponse *Ar
 	domain := "1.info.info-dc"
 	fields := make([]string, 0)
 	for _, kw := range keywords {
-		fields = append(fields, fmt.Sprintf("\"%s\"~", kw))
+		fields = append(fields, fmt.Sprintf("((title_t:\"%s\"~)OR(abstract_t:\"%s\"~))", kw, kw))
 	}
-	title_request := strings.Join(fields, "||")
-	url := fmt.Sprintf("https://api.archives-ouvertes.fr/search/?q=abstract_t:(%s)&fq=title_t:(%s)&fq=openAccess_bool:true&wt=json&fq=domain_s:%s&fl=title_s,submittedDate_tdate,abstract_s,halId_s,domain_s,authFullName_s&rows=100000", title_request, title_request, domain)
+	title_request := strings.Join(fields, "AND")
+	url := fmt.Sprintf("https://api.archives-ouvertes.fr/search/?q=(%s)&fq=openAccess_bool:true&wt=json&fq=domain_s:%s&fl=title_s,submittedDate_tdate,abstract_s,halId_s,domain_s,authFullName_s&rows=100000", title_request, domain)
+	fmt.Printf("URL: %s\n", url)
 	resp, err := http.Get(url)
 	if err != nil {
 		fmt.Println("get")
@@ -215,9 +217,9 @@ func send_get_req(keywords []string, halResponse *HalResponse, arxivResponse *Ar
 	// TODO
 	arxivFields := make([]string, 0)
 	for _, kw := range keywords {
-		arxivFields = append(arxivFields, fmt.Sprintf("ti:%s+OR+abs:%s", kw, kw))
+		arxivFields = append(arxivFields, fmt.Sprintf("(ti:%s+OR+abs:%s)", kw, kw))
 	}
-	arxiv_request := strings.Join(arxivFields, "+OR+")
+	arxiv_request := strings.Join(arxivFields, "+AND+")
 	url = fmt.Sprintf("http://export.arxiv.org/api/query?search_query=%s+AND+cat:cs.DC&max_results=200", arxiv_request)
 	resp, err = http.Get(url)
 	if err != nil {
@@ -250,8 +252,9 @@ func send_get_req(keywords []string, halResponse *HalResponse, arxivResponse *Ar
 }
 
 type model struct {
-	keyword       string
-	textInput     textinput.Model
+	keyword string
+	/// textInput     textinput.Model
+	textInput     textarea.Model
 	queryDone     bool
 	halResponse   *HalResponse
 	arxivResponse *ArxivResponse
@@ -266,22 +269,23 @@ type model struct {
 }
 
 func initialModel() model {
-	ti := textinput.New()
+	ti := textarea.New()
 	ti.Placeholder = "openmp"
 	ti.Focus()
 	ti.CharLimit = 156
-	ti.Width = 20
+	// ti.Width = 20
 	var halResponse HalResponse
 	var arxivResponse ArxivResponse
 	return model{textInput: ti, halResponse: &halResponse, arxivResponse: &arxivResponse}
 }
 
 func (m model) Init() tea.Cmd {
-	return textinput.Blink
+	return textarea.Blink
 }
 
 func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	var cmd tea.Cmd
+	var cmds []tea.Cmd
 	switch msg := msg.(type) {
 	case statusMsg:
 		switch int(msg) {
@@ -330,24 +334,36 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 
 		}
 	case tea.KeyMsg:
-		switch msg.Type {
-		case tea.KeyCtrlC, tea.KeyEsc:
-			return m, tea.Quit
-		case tea.KeyTab:
-			m.viewOnAbstract = !m.viewOnAbstract
-			return m, nil
-		case tea.KeyEnter:
-			if m.queryDone {
+		if m.queryDone {
+			switch msg.Type {
+			case tea.KeyCtrlC:
+				return m, tea.Quit
+			case tea.KeyTab:
+				m.viewOnAbstract = !m.viewOnAbstract
+				return m, nil
+			case tea.KeyEnter:
 				i, ok := m.list.SelectedItem().(Document)
 				if ok {
 					cmdBrowser := exec.Command("xdg-open", i.Url)
 					cmdBrowser.Run()
 				}
 				return m, nil
-			} else {
+			}
+		} else {
+			switch msg.Type {
+			case tea.KeyEsc:
+				if m.textInput.Focused() {
+					m.textInput.Blur()
+				}
 				m.keyword = m.textInput.Value()
-				keywords := []string{m.keyword}
+				keywords := strings.Split(m.keyword, "\n")
+				// fmt.Printf("KEYWORDS: %v\n", keywords)
 				return m, (func() tea.Msg { return send_get_req(keywords, m.halResponse, m.arxivResponse) })
+			default:
+				if !m.textInput.Focused() {
+					cmd = m.textInput.Focus()
+					cmds = append(cmds, cmd)
+				}
 			}
 		}
 	}
@@ -366,7 +382,9 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	} else {
 		m.textInput, cmd = m.textInput.Update(msg)
 	}
-	return m, cmd
+	cmds = append(cmds, cmd)
+	return m, tea.Batch(cmds...)
+	// return m, cmd
 }
 
 func (m model) View() string {
