@@ -1,27 +1,24 @@
 # SotA Intern
 
-a script aiming to generate a list of papers to read based on keywords
+A TUI to explore open-access papers.
 
+## Demo
 
-## Objective
+![Demo](./demo.gif)
 
-```shell
-sota-intern "self-scheduling" "openmp" ...
-```
+1. Enter the keywords
 
-1. query the Hal and Arxiv apis for papers with those words in the title or abstracts
-2. extract the references from those papers
-3. for all the references available online, fetch the references
-4. continue until no more or depth too deep
-5. construct a ranking of most frequent papers cited 
+2. Press `Escape` to validate
 
+3. Navigate the found papers
+
+4. Press `Enter` to open the selected paper
 
 ## TODO
 
-- [X] get papers from HAL from keywords
-- [ ] get papers from HAL from title
-- [ ] get papers from Arxiv from keywords
-- [ ] get papers from Arxiv from title
+- [X] get papers from HAL
+- [X] get papers from Arxiv
+- [ ] get papers from IEEE
 - [ ] extract references names
 - [ ] recursive calls of papers
 - [ ] create ranking

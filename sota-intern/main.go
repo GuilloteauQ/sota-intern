@@ -4,7 +4,6 @@ import (
 	"encoding/json"
 	"encoding/xml"
 	"fmt"
-	//"io"
 	"io/ioutil"
 	"net/http"
 	"os"
@@ -12,7 +11,6 @@ import (
 	"strings"
 
 	"github.com/charmbracelet/bubbles/list"
-	// "github.com/charmbracelet/bubbles/textinput"
 	"github.com/charmbracelet/bubbles/textarea"
 	"github.com/charmbracelet/bubbles/viewport"
 	tea "github.com/charmbracelet/bubbletea"
@@ -190,7 +188,6 @@ func send_get_req(keywords []string, halResponse *HalResponse, arxivResponse *Ar
 	}
 	title_request := strings.Join(fields, "AND")
 	url := fmt.Sprintf("https://api.archives-ouvertes.fr/search/?q=(%s)&fq=openAccess_bool:true&wt=json&fq=domain_s:%s&fl=title_s,submittedDate_tdate,abstract_s,halId_s,domain_s,authFullName_s&rows=100000", title_request, domain)
-	fmt.Printf("URL: %s\n", url)
 	resp, err := http.Get(url)
 	if err != nil {
 		fmt.Println("get")
@@ -203,10 +200,10 @@ func send_get_req(keywords []string, halResponse *HalResponse, arxivResponse *Ar
 		panic(err)
 	}
 
-	err = ioutil.WriteFile("output.txt", data, 0644)
-	if err != nil {
-		panic(err)
-	}
+	//err = ioutil.WriteFile("output.txt", data, 0644)
+	//if err != nil {
+	//	panic(err)
+	//}
 
 	err = json.Unmarshal(data, halResponse)
 	if err != nil {
@@ -232,10 +229,10 @@ func send_get_req(keywords []string, halResponse *HalResponse, arxivResponse *Ar
 		fmt.Println("read")
 		panic(err)
 	}
-	err = ioutil.WriteFile("output_arxiv.txt", data, 0644)
-	if err != nil {
-		panic(err)
-	}
+	// err = ioutil.WriteFile("output_arxiv.txt", data, 0644)
+	// if err != nil {
+	// 	panic(err)
+	// }
 	//content, err := os.ReadFile("arxiv.xml")
 	//if err != nil {
 	//	fmt.Println("get")
@@ -252,16 +249,14 @@ func send_get_req(keywords []string, halResponse *HalResponse, arxivResponse *Ar
 }
 
 type model struct {
-	keyword string
-	/// textInput     textinput.Model
-	textInput     textarea.Model
-	queryDone     bool
-	halResponse   *HalResponse
-	arxivResponse *ArxivResponse
-	list          list.Model
-	choice        string
-	quitting      bool
-	// showAbstract bool
+	keyword        string
+	textInput      textarea.Model
+	queryDone      bool
+	halResponse    *HalResponse
+	arxivResponse  *ArxivResponse
+	list           list.Model
+	choice         string
+	quitting       bool
 	viewport       viewport.Model
 	content        string
 	ready          bool
@@ -273,7 +268,6 @@ func initialModel() model {
 	ti.Placeholder = "openmp"
 	ti.Focus()
 	ti.CharLimit = 156
-	// ti.Width = 20
 	var halResponse HalResponse
 	var arxivResponse ArxivResponse
 	return model{textInput: ti, halResponse: &halResponse, arxivResponse: &arxivResponse}
@@ -320,7 +314,7 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			m.viewport.YPosition = headerHeight
 
 			m.list = list.New([]list.Item{}, list.NewDefaultDelegate(), msg.Width/2, msg.Height-verticalMarginHeight) // msg.Height)
-			m.list.Title = "What do you want for dinner?"
+			m.list.Title = ""                                                                                         //What do you want for dinner?"
 			m.list.SetShowStatusBar(false)
 			m.list.SetFilteringEnabled(false)
 			m.list.Styles.Title = titleStyle
@@ -351,6 +345,8 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			}
 		} else {
 			switch msg.Type {
+			case tea.KeyCtrlC:
+				return m, tea.Quit
 			case tea.KeyEsc:
 				if m.textInput.Focused() {
 					m.textInput.Blur()
@@ -393,9 +389,9 @@ func (m model) View() string {
 		return lipgloss.JoinHorizontal(lipgloss.Left, m.list.View(), fmt.Sprintf("%s\n%s\n%s", m.headerView(), m.viewport.View(), m.footerView()))
 	} else {
 		return fmt.Sprintf(
-			"Enter Keyword\n\n%s\n\n%s",
+			"Enter Keywords\n\n%s\n\n%s",
 			m.textInput.View(),
-			"(esc to quit)",
+			"(esc to validate, Ctrl-C to quit)",
 		) + "\n"
 	}
 }

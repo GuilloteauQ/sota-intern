@@ -20,6 +20,7 @@
       };
       devShells.${system} = {
         default = pkgs.mkShell { buildInputs = with pkgs; [ go ]; };
+        record = pkgs.mkShell { buildInputs = with pkgs; [ vhs self.packages.${system}.sota-intern ]; };
       };
 
     };
